@@ -1,4 +1,4 @@
-### This repository is copied over from the `pip install inferactively-pymdp` version (0.0.7.1) of `pymdp` . I did not author this repository and am releasing it given its MIT License status. This repository is dedicated to storing this legacy version for reference and experimentation.
+### This repository is copied over from the `pip install inferactively-pymdp` version (0.0.7.1) of `pymdp` . I did not author this repository and am releasing it given its MIT License status. This repository is dedicated to storing this legacy version for reference and experimentation. See original README below and the original repository and README for reference at https://github.com/infer-actively/pymdp/blob/master/README.md 
 
 <p align='center'>
   <a href='https://github.com/infer-actively/pymdp'>
