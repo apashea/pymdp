@@ -1,0 +1,5 @@
+def custom_test_print_funciton(optional=None):
+  if optional:
+    print(optional)
+  else:
+    print("Function functional.")
