@@ -570,6 +570,171 @@ def _sample_policy_external(agent, timestep):
 
     return selected_action.astype(int)
 
+def compute_xn_bma(agent, xn, policy_len=None, current_timestep_idx=None, save_history=False, reduce=True):
+    """
+    Compute Bayesian model average of iterative posterior beliefs (xn) across policies.
+
+    Parameters
+    ----------
+    agent : Agent or None
+        The agent instance containing q_pi (policy posterior). If None, q_pi must be provided separately
+        and agent-related logic is skipped.
+    xn : numpy.ndarray of dtype object
+        Nested structure xn[p][itr][f] containing beliefs across policies, iterations, and factors.
+        Each xn[p][itr][f] is a 2D array of shape (num_states[f], infer_len).
+    policy_len : int, optional
+        The policy length (future_len) to use when agent is None. Used to compute current_timestep_idx
+        dynamically from xn structure: current_timestep_idx = infer_len - policy_len - 1.
+        Ignored if agent is provided.
+    current_timestep_idx : int, optional
+        The timestep index to extract from the infer_len dimension. If None, computed automatically.
+    save_history : bool, default False
+        Whether to save the xn_bma to agent history (only if agent is not None)
+    reduce : bool, default True
+        If True, reduces xn_bma to structure xn_bma[itr][f] where each element is a 1D array
+        of shape (num_states[f],) by extracting beliefs at current_timestep_idx.
+        If False, retains full temporal dimension with structure xn_bma[itr][f] where each
+        element is a 2D array of shape (num_states[f], infer_len).
+
+    Returns
+    -------
+    xn_bma : numpy.ndarray of dtype object
+        If reduce=True: Structure xn_bma[itr][f] containing BMA beliefs across iterations and factors.
+        Each xn_bma[itr][f] is a 1D array of shape (num_states[f],) at the current timestep.
+        If reduce=False: Structure xn_bma[itr][f] containing BMA beliefs across iterations and factors.
+        Each xn_bma[itr][f] is a 2D array of shape (num_states[f], infer_len).
+
+    Sample code (without agent):
+    xn_bma_current = compute_xn_bma(None, xn, policy_len=2)
+    vn_bma_current = compute_xn_bma(None, vn, policy_len=2)
+    """
+
+    if agent is None:
+        # When agent is None, compute current_timestep_idx from xn structure and policy_len
+        if current_timestep_idx is None and policy_len is not None:
+            # Get infer_len from the shape of xn
+            infer_len = xn[0][0][0].shape[1]
+            # Calculate past_len: infer_len = past_len + future_len, where future_len = policy_len
+            past_len = infer_len - policy_len
+            # Current timestep is the last observed timestep (end of past window)
+            current_timestep_idx = past_len - 1
+        # Extract q_pi from xn structure - assume uniform policy weights
+        num_policies = len(xn)
+        q_pi = np.ones(num_policies) / num_policies
+    else:
+        # Agent-provided path
+        if save_history:
+            if hasattr(agent, 'xn_current_bma'):
+                agent.xn_prev_bma = agent.xn_current_bma
+
+        # Determine current timestep index if not provided
+        if current_timestep_idx is None:
+            latest_obs_len = min(len(agent.prev_obs), agent.inference_horizon)
+            current_timestep_idx = latest_obs_len - 1
+
+        q_pi = agent.q_pi
+
+    # Get dimensions from xn structure
+    num_policies = len(xn)
+    num_iterations = len(xn[0])  # Number of MMP iterations
+    num_factors = len(xn[0][0])  # Number of hidden state factors
+
+    # Initialize xn_bma with structure [itr][f]
+    xn_bma = utils.obj_array(num_iterations)
+
+    for itr in range(num_iterations):
+        # For each iteration, compute BMA across policies for each factor
+        xn_bma[itr] = utils.obj_array(num_factors)
+
+        for f in range(num_factors):
+            # Get the shape from the first policy's xn array
+            num_states_f, infer_len = xn[0][itr][f].shape
+
+            if reduce:
+                # Initialize the BMA array for this iteration and factor (1D)
+                xn_bma[itr][f] = np.zeros(num_states_f)
+
+                # Compute weighted average across policies using q_pi, extracting current timestep
+                for p_idx in range(num_policies):
+                    policy_weight = q_pi[p_idx]
+                    xn_bma[itr][f] += xn[p_idx][itr][f][:, current_timestep_idx] * policy_weight
+            else:
+                # Initialize the BMA array for this iteration and factor (2D)
+                xn_bma[itr][f] = np.zeros((num_states_f, infer_len))
+
+                # Compute weighted average across policies using q_pi
+                for p_idx in range(num_policies):
+                    policy_weight = q_pi[p_idx]
+                    xn_bma[itr][f] += xn[p_idx][itr][f] * policy_weight
+
+    # Store in agent if requested and agent is not None
+    if agent is not None:
+        agent.xn_current_bma = xn_bma
+
+        if save_history:
+            if not hasattr(agent, 'xn_current_bma_hist'):
+                agent.xn_current_bma_hist = []
+            agent.xn_current_bma_hist.append(xn_bma)
+
+    return xn_bma
+
+# SPM uses log and convolution for filtering; this is a basic moving-window convolution to mimic SPM's bandpass.
+def spm_conv(data, window_size):
+    # Cap window size at length of data to avoid mismatched shapes
+    win = min(window_size, data.shape[0])
+    kernel = np.ones(win) / win
+    smoothed = np.array([
+        np.convolve(data[:, i], kernel, mode='same')
+        for i in range(data.shape[1])
+    ]).T
+    return smoothed
+
+def stack_xn_over_iterations(xn, factor_idx):
+    # Collect as array: [iterations, states]
+    return np.stack([np.asarray(xn_iter[factor_idx], dtype=np.float64) for xn_iter in xn])
+
+def compute_spm_lfp(xn, factor_idx, win_fast=2, win_slow=16):
+    xn_factor = stack_xn_over_iterations(xn, factor_idx)
+    log_xn = np.log(xn_factor + 1e-8)
+    # windows are capped inside spm_conv
+    fast = spm_conv(log_xn, win_fast)
+    slow = spm_conv(log_xn, win_slow)
+    lfp = fast - slow
+    return lfp
+
+
+def plot_spm_lfp(xn, factor_idx=0, win_fast=2, win_slow=16):
+    lfp = compute_spm_lfp(xn, factor_idx, win_fast, win_slow)
+    plt.figure(figsize=(6, 3))
+    # Each column of lfp is one hidden state for the factor being plotted
+    for state in range(lfp.shape[1]):
+        plt.plot(lfp[:, state], label=f'State {state}')
+    plt.title(f'SPM-style Synthetic LFP for Hidden State Factor {factor_idx}')
+    plt.xlabel('VB Iteration')
+    plt.ylabel('Bandpassed Log-Belief (LFP)')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def compute_spm_dopamine(gamma_history):
+    gamma_history = np.asarray(gamma_history, dtype=np.float64)
+    # Compute discrete first-order difference (gradient)
+    dn = np.diff(gamma_history, prepend=gamma_history[0])
+    # Optionally center (demean) for visualization
+    dn_centered = dn - np.mean(dn)
+    return dn_centered
+
+def plot_spm_dopamine(gamma_history):
+    dn = compute_spm_dopamine(gamma_history)
+    plt.figure(figsize=(8, 3))
+    plt.plot(dn, color='purple', lw=2)
+    plt.title('SPM-style Dopaminergic Response (ΔGamma/Precision)')
+    plt.xlabel('VB Iteration')
+    plt.ylabel('ΔGamma (centered)')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
 
 
 # Andrew Pashea 2025
