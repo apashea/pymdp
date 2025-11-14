@@ -704,6 +704,7 @@ def compute_spm_lfp(xn, factor_idx, win_fast=2, win_slow=16):
 
 
 def plot_spm_lfp(xn, factor_idx=0, win_fast=2, win_slow=16):
+    import matplotlib.pyplot as plt
     lfp = compute_spm_lfp(xn, factor_idx, win_fast, win_slow)
     plt.figure(figsize=(6, 3))
     # Each column of lfp is one hidden state for the factor being plotted
@@ -726,6 +727,7 @@ def compute_spm_dopamine(gamma_history):
     return dn_centered
 
 def plot_spm_dopamine(gamma_history):
+    import matplotlib.pyplot as plt
     dn = compute_spm_dopamine(gamma_history)
     plt.figure(figsize=(8, 3))
     plt.plot(dn, color='purple', lw=2)
