@@ -447,6 +447,7 @@ def update_E(self, q_pi, lr_pE=1.0, initial_scale=1.0, monitoring=False):
 
 
 def compute_current_qs_bma(agent, current_timestep_idx=None, save_history=False):
+    from pymdp import inference
     # c.f. Agent class `set_latest_beliefs(self,last_belief=None)`
 
     if save_history:
