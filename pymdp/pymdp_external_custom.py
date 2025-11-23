@@ -738,5 +738,135 @@ def plot_spm_dopamine(gamma_history):
     plt.tight_layout()
     plt.show()
 
+####### EXPERIMENTAL ##########################################################
+def update_preferences_dirichlet_m(pC_m, obs_m, lr=1.0):  
+    """  
+    JAX version of C matrix learning for a single modality.  
+      
+    Parameters  
+    ----------  
+    pC_m : Array  
+        Dirichlet parameters for modality m  
+    obs_m : Array  
+        Observed outcome for modality m (one-hot or distributional)  
+    lr : float  
+        Learning rate  
+          
+    Returns  
+    -------  
+    new_pC_m : Array  
+        Updated Dirichlet parameters  
+    C_m : Array  
+        Updated preference distribution (expected value)  
+    """  
+    # Dirichlet update: pC_m += lr * obs_m  
+    new_pC_m = pC_m + lr * obs_m  
+    C_m = dirichlet_expected_value(new_pC_m)  
+      
+    return new_pC_m, C_m  
+  
+def update_preferences_dirichlet(pC, C, obs, *, onehot_obs, num_obs, lr, modalities_to_learn=None):  
+    """  
+    JAX version of C matrix learning across all modalities.  
+      
+    Parameters  
+    ----------  
+    pC : list  
+        Dirichlet parameters for each modality  
+    C : list  
+        Current preference distributions  
+    obs : list  
+        Observations for each modality  
+    onehot_obs : bool  
+        Whether observations are already one-hot encoded  
+    num_obs : list  
+        Number of outcomes per modality  
+    lr : float  
+        Learning rate  
+    modalities_to_learn : list, optional  
+        Indices of modalities to update (None = all)  
+          
+    Returns  
+    -------  
+    qC : list  
+        Updated Dirichlet parameters  
+    E_qC : list  
+        Updated preference distributions  
+    """  
+    from jax import nn  
+      
+    obs_m = lambda o, dim: nn.one_hot(o, dim) if not onehot_obs else o  
+      
+    # Determine which modalities to learn  
+    if modalities_to_learn is None:  
+        modalities_to_learn = list(range(len(pC)))  
+      
+    update_C_fn = lambda pC_m, o_m, dim, m_idx: (  
+        None if pC_m is None or m_idx not in modalities_to_learn   
+        else update_preferences_dirichlet_m(pC_m, obs_m(o_m, dim), lr=lr)  
+    )  
+      
+    result = tree_map(  
+        update_C_fn,  
+        pC, obs, num_obs, list(range(len(pC))),  
+        is_leaf=lambda x: x is None  
+    )  
+      
+    qC = []  
+    E_qC = []  
+    for i, r in enumerate(result):  
+        if r is None:  
+            qC.append(pC[i])  
+            E_qC.append(C[i])  
+        else:  
+            qC.append(r[0])  
+            E_qC.append(r[1])  
+      
+    return qC, E_qC
+
+def update_policy_prior_dirichlet(pE, E, q_pi, lr=1.0):  
+    """  
+    JAX version of E matrix (policy prior/habits) learning.  
+      
+    Updates Dirichlet parameters over policy priors based on posterior   
+    beliefs over policies, implementing habit learning as described in:  
+    - Adams et al. 2022: Everything is connected  
+    - Active Inference 2022 textbook: e = e + π  
+      
+    Parameters  
+    ----------  
+    pE : Array  
+        Dirichlet parameters for policy prior (shape: num_policies)  
+    E : Array  
+        Current policy prior distribution (shape: num_policies)  
+    q_pi : Array  
+        Posterior beliefs over policies from current timestep  
+    lr : float  
+        Learning rate  
+          
+    Returns  
+    -------  
+    qE : Array  
+        Updated Dirichlet parameters  
+    E_qE : Array  
+        Updated policy prior distribution (expected value)  
+    """  
+    # Dirichlet update: pE += lr * q_pi  
+    qE = pE + lr * q_pi  
+    E_qE = dirichlet_expected_value(qE)  
+      
+    return qE, E_qE
+
+# # Integration with Agent (into agent infer_parameters method)
+# if self.learn_E:  
+#     lr = jnp.broadcast_to(lr_pE, (self.batch_size,))  
+#     qE, E_qE = vmap(update_policy_prior_dirichlet)(  
+#         self.pE,  
+#         self.E,  
+#         q_pi,  # from the most recent infer_policies call  
+#         lr=lr  
+#     )  
+      
+#     agent = tree_at(lambda x: (x.E, x.pE), agent, (E_qE, qE))
 
 # Andrew Pashea 2025
