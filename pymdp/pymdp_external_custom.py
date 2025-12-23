@@ -176,12 +176,16 @@ def infer_policies_info(self):
 
 def select_highest_equivalent(options_array):
     """Equivalent to control.select_highest()"""
-    options_with_idx = np.array(list(enumerate(options_array)))
-    same_prob = options_with_idx[
-        abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= 1e-8][:, 0]
-    if len(same_prob) > 1:
-        return int(same_prob[np.random.choice(len(same_prob))])
-    return int(same_prob[0])
+    # options_with_idx = np.array(list(enumerate(options_array)))
+    # same_prob = options_with_idx[
+    #     abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= 1e-8][:, 0]
+    # if len(same_prob) > 1:
+    #     return int(same_prob[np.random.choice(len(same_prob))])
+    # return int(same_prob[0])
+    max_val = np.max(options_array)  
+    max_indices = np.where(np.abs(options_array - max_val) < 1e-8)[0]  
+    return max_indices[0]  # Always choose first index
+    
 
 def infer_states_info(self, observation, distr_obs=False):
         from pymdp import inference
