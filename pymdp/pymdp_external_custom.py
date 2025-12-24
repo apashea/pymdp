@@ -1,5 +1,10 @@
 # Andrew Pashea 2025
-
+import itertools
+import numpy as np
+from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
+from pymdp.control import get_expected_obs, calc_expected_utility, calc_states_info_gain, calc_pA_info_gain, calc_pB_info_gain
+from pymdp import utils, inference
+import copy
 
 
 def custom_test_print_function(optional=None):
@@ -8,12 +13,6 @@ def custom_test_print_function(optional=None):
   else:
     print("Function functional.")
 
-import itertools
-import numpy as np
-from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
-from pymdp.control import get_expected_obs, calc_expected_utility, calc_states_info_gain, calc_pA_info_gain, calc_pB_info_gain
-from pymdp import utils
-import copy
 
 def update_posterior_policies_full_info(
     qs_seq_pi,
