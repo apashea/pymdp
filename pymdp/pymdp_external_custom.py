@@ -873,4 +873,18 @@ def update_policy_prior_dirichlet(pE, E, q_pi, lr=1.0):
       
 #     agent = tree_at(lambda x: (x.E, x.pE), agent, (E_qE, qE))
 
+import ast
+
+def safe_literal_eval(val):
+    try:
+        # Only evaluate strings that look like lists
+        if isinstance(val, str) and val.startswith('[') and val.endswith(']'):
+            return ast.literal_eval(val)
+        else:
+            # Return original value if not a valid list string
+            return val
+    except Exception:
+        # Return original value for any parse error
+        return val
+
 # Andrew Pashea 2025
