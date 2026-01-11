@@ -886,4 +886,448 @@ def safe_literal_eval(val):
         # Return original value for any parse error
         return val
 
+def plot_model(df):
+    from matplotlib.gridspec import GridSpec
+
+    hidden_state_labels = [
+        ['trust', 'distrust'],
+        ['blue', 'green'],
+        ['angry', 'calm'],
+        ['blue', 'green', 'null', 'withdraw'],
+        ['null', 'advice', 'decision']
+    ]
+    qs_high_labels = [
+        ['safe', 'danger'],
+        ['safe', 'danger'],
+        ['safe', 'danger']
+    ]
+    policy_labels = [
+        'trust+green', 'trust+blue', 'distrust+blue', 'distrust+green', 'trust+withdraw', 'distrust+withdraw'
+    ]
+    obs_modality_labels = [
+        ['blue', 'green', 'null'],       # advice_obs
+        ['correct', 'incorrect', 'null'],# feedback_obs
+        ['high', 'low'],                 # arousal_obs
+        ['blue', 'green', 'null', 'withdraw'] # choice_obs
+    ]
+    modality_names = ['advice_obs', 'feedback_obs', 'arousal_obs', 'choice_obs']
+    modality_colors = {
+        'blue':'#1f77b4', 'green':'#2ca02c', 'null':'#7f7f7f', 'correct':'#FFD700', 'incorrect':'#C41236',
+        'high':'#e377c2', 'low':'#8c564b', 'withdraw':'#9467bd'
+    }
+
+    action_labels = {
+        'trust_action': ['trust', 'distrust'],
+        'card_action': ['green', 'blue', 'null', 'withdraw']
+    }
+    action_colors = {
+        'trust': '#1f77b4', 'distrust': '#C41236',
+        'green': '#2ca02c', 'blue': '#1f77b4',
+        'null': '#7f7f7f', 'withdraw': '#9467bd'
+    }
+    action_names = ['trust_action', 'card_action']
+
+    N = len(df)
+
+    def expand_hidden_states(series, labels, prefix):
+        expanded = []
+        ytick_labels = []
+        for i, state_labels in enumerate(labels):
+            for j, label in enumerate(state_labels):
+                arr = [row[i][j] for row in series]
+                expanded.append(arr)
+                ytick_labels.append(f'{prefix}{i+1}_{label}')
+        return np.array(expanded), ytick_labels
+
+    qo_heatmap, qo_yticks = expand_hidden_states(df['qo_pi_high'], hidden_state_labels, 's')
+    qsh_heatmap, qsh_yticks = expand_hidden_states(df['qs_high_bma'], qs_high_labels, 's')
+    qs_heatmap, qs_yticks = expand_hidden_states(df['qs_bma'], hidden_state_labels, 's')
+
+    q_pi = np.array([row for row in df['q_pi']])
+    q_pi = q_pi.T
+
+    obs_array = np.array([row for row in df['obs']]).T
+
+    gamma = df['gamma'].values
+    gamma_history_full = np.zeros(N*16)
+    for i,row in enumerate(df['gamma_history']):
+        if len(row) == 16:
+            gamma_history_full[i*16:(i+1)*16] = row
+
+    heights = [2,2,4,3,2,3,3]
+    width_ratios = [18,2]  # Widen right col a bit for wide legends if needed
+    gs = GridSpec(7, 2, width_ratios=width_ratios, height_ratios=heights, wspace=0.04, hspace=0.45, figure=plt.gcf() if plt.get_fignums() else plt.figure(figsize=(16, 25)))
+    fig = plt.gcf() if plt.get_fignums() else plt.figure(figsize=(16, 25))
+    plt.clf()
+    cmap = 'binary_r'
+
+    axes = []
+    cbaxes = []
+    for row in range(7):
+        ax = fig.add_subplot(gs[row,0])
+        cax = fig.add_subplot(gs[row,1])
+        cbaxes.append(cax)
+        axes.append(ax)
+
+    # --- 1. qo_pi_high heatmap ---
+    im1 = axes[0].imshow(qo_heatmap, aspect='auto', cmap=cmap, interpolation='nearest', vmin=0.0, vmax=1.0)
+    axes[0].set_ylabel('Expected L1 states')
+    axes[0].set_yticks(range(len(qo_yticks)))
+    axes[0].set_yticklabels(qo_yticks)
+    axes[0].set_xlabel('Timestep')
+    axes[0].set_title('Expected L1 States (qo_pi_high)')
+    plt.colorbar(im1, cax=cbaxes[0])
+    cbaxes[0].set_ylabel('Prob.')
+
+    # --- 2. qs_high_bma heatmap ---
+    im2 = axes[1].imshow(qsh_heatmap, aspect='auto', cmap=cmap, interpolation='nearest', vmin=0.0, vmax=1.0)
+    axes[1].set_ylabel('Higher level states')
+    axes[1].set_yticks(range(len(qsh_yticks)))
+    axes[1].set_yticklabels(qsh_yticks)
+    axes[1].set_xlabel('Timestep')
+    axes[1].set_title('Higher Level State Beliefs (qs_high_bma)')
+    plt.colorbar(im2, cax=cbaxes[1])
+    cbaxes[1].set_ylabel('Prob.')
+
+    # --- 3. qs_bma heatmap ---
+    im3 = axes[2].imshow(qs_heatmap, aspect='auto', cmap=cmap, interpolation='nearest', vmin=0.0, vmax=1.0)
+    axes[2].set_ylabel('Lower level states')
+    axes[2].set_yticks(range(len(qs_yticks)))
+    axes[2].set_yticklabels(qs_yticks)
+    axes[2].set_xlabel('Timestep')
+    axes[2].set_title('Lower Level State Beliefs (qs_bma)')
+    plt.colorbar(im3, cax=cbaxes[2])
+    cbaxes[2].set_ylabel('Prob.')
+
+    # --- 4. Observation scatterplot (one row per modality) ---
+    for mi, modality in enumerate(modality_names):
+        row = obs_array[mi]
+        for j,label in enumerate(obs_modality_labels[mi]):
+            indices = np.where(row == j)[0]
+            color = modality_colors.get(label, None)
+            axes[3].scatter(indices,
+                            np.full_like(indices, mi),
+                            color=color, label=f'{modality}:{label}', s=30)
+    axes[3].set_yticks(range(len(modality_names)))
+    axes[3].set_yticklabels(modality_names)
+    axes[3].set_title('Observations over Time')
+    axes[3].set_ylabel('Modality')
+    axes[3].set_xlabel('Timestep')
+    obs_handles, obs_labels = axes[3].get_legend_handles_labels()
+    obs_by_label = dict(zip(obs_labels, obs_handles))
+    # Place legend in external column only, not on the plot
+    cbaxes[3].axis('off')
+    cbaxes[3].legend(obs_by_label.values(), obs_by_label.keys(), loc='center left', bbox_to_anchor=(0, 0.5), fontsize='small', frameon=False)
+
+    # --- 5. Actions over Time scatterplot (NEW) ---
+    for ai, action in enumerate(action_names):
+        series = df[action].values
+        for label in action_labels[action]:
+            indices = np.where((series == label) & (df['timestep'].values != 2))[0]
+            color = action_colors.get(label, None)
+            axes[4].scatter(indices, np.full_like(indices, ai), color=color, label=f'{action}:{label}', s=40)
+    axes[4].set_yticks(range(len(action_names)))
+    axes[4].set_yticklabels(action_names)
+    axes[4].set_title('Actions over Time')
+    axes[4].set_ylabel('Action')
+    axes[4].set_xlabel('Timestep')
+    action_handles, action_labels_ = axes[4].get_legend_handles_labels()
+    action_by_label = dict(zip(action_labels_, action_handles))
+    cbaxes[4].axis('off')
+    cbaxes[4].legend(action_by_label.values(), action_by_label.keys(), loc='center left', bbox_to_anchor=(0, 0.5), fontsize='small', frameon=False)
+
+    # --- 6. Policy heatmap + chosen policies ---
+    im4 = axes[5].imshow(q_pi, aspect='auto', cmap=cmap, interpolation='nearest', vmin=0.0, vmax=1.0)
+    axes[5].set_yticks(range(6))
+    axes[5].set_yticklabels(policy_labels)
+    axes[5].set_title('Policy Posterior Probabilities (q_pi)')
+    axes[5].set_ylabel('Policy')
+    axes[5].set_xlabel('Timestep')
+    plt.colorbar(im4, cax=cbaxes[5])
+    cbaxes[5].set_ylabel('Prob.')
+    for i in range(N):
+        if df['timestep'].iloc[i] != 2:
+            chosen = np.argmax(df['q_pi'].iloc[i])
+            axes[5].scatter(i, chosen, color='red', s=24)
+
+    # --- 7. Gamma term line plot ---
+    x_gamma = np.arange(N)  # trial-level steps
+    x_gamma_history = np.linspace(0, N, N * 16, endpoint=False)
+    #line1, = axes[6].plot(x_gamma_history, gamma_history_full, color='purple', label='gamma_history', linewidth=1)
+    line2, = axes[6].plot(x_gamma, gamma, color='green', label='gamma', marker='o', markersize=7, linewidth=2)
+    axes[6].set_title('Expected Policy Precision (Gamma)')
+    axes[6].set_xlabel('Timestep')
+    axes[6].set_ylabel('Expected Policy Precision (Gamma)')
+    for t in x_gamma:
+        axes[6].axvline(t, color='gray', linestyle='--', alpha=0.2)
+    cbaxes[6].axis('off')
+    #cbaxes[6].legend([line1, line2], ['gamma_history', 'gamma'], loc='center left', bbox_to_anchor=(0, 0.5), fontsize='small', frameon=False)
+    cbaxes[6].legend([line2], ['gamma_history', 'gamma'], loc='center left', bbox_to_anchor=(0, 0.5), fontsize='small', frameon=False)
+
+    #plt.tight_layout()
+    plt.show()
+
+def plot_C_modalities(results_df, y_prob_limits=False, modalities_to_plot=[0,1,2,3], plot_title=''):
+    modality_labels = ['Advice', 'Feedback', 'Arousal', 'Choice']
+    value_names = [
+        ['blue', 'green', 'null'],
+        ['Correct', 'Incorrect', 'No Feedback'],
+        ['High', 'Low'],
+        ['blue', 'green', 'null', 'withdraw']
+    ]
+
+    n_modalities = len(modalities_to_plot)
+    fig, axes = plt.subplots(
+        n_modalities, 1, figsize=(8, 2 * n_modalities), sharex=True,
+        gridspec_kw={'hspace': 0}
+    )
+    if n_modalities == 1:
+        axes = [axes]
+
+    timesteps = range(len(results_df))
+
+    for plot_idx, mod_idx in enumerate(modalities_to_plot):
+        mod_label = modality_labels[mod_idx]
+        val_names = value_names[mod_idx]
+        n_values = len(val_names)
+        avg_probs = np.zeros((len(results_df), n_values))
+
+        for i in timesteps:
+            row_C = results_df.iloc[i]['C']
+            if len(row_C) > mod_idx and isinstance(row_C[mod_idx], list):
+                avg = np.array(row_C[mod_idx])
+            else:
+                avg = np.zeros(n_values)
+            avg_probs[i] = avg
+
+        for val_idx, name in enumerate(val_names):
+            axes[plot_idx].plot(timesteps, avg_probs[:, val_idx], label=name)
+
+        axes[plot_idx].set_ylabel(mod_label)
+        if y_prob_limits:
+            axes[plot_idx].set_ylim(0.0, 1.0)
+        axes[plot_idx].legend(loc='upper right', fontsize=10)
+        axes[plot_idx].grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel('Timestep')
+    if plot_title:
+        fig.suptitle(plot_title)
+    plt.tight_layout(h_pad=0)
+    plt.subplots_adjust(hspace=0, top=0.92 if plot_title else 0.97)
+    plt.show()
+
+
+def plot_factors(results_df, col='D', y_prob_limits=False, factors_to_plot=[0,1,2,3,4], plot_title=''):
+    factor_labels = [
+        'Trustworthiness', 'Correct Card', 'Affect', 'Choice', 'Stage'
+    ]
+    value_names = [
+        ['Trustworthy', 'Untrustworthy'],
+        ['blue', 'green'],
+        ['Negative', 'Positive'],
+        ['blue', 'green', 'null', 'withdraw'],
+        ['null', 'advice', 'decision']
+    ]
+
+    # Select which factors to plot
+    plot_labels = [factor_labels[i] for i in factors_to_plot]
+    plot_values = [value_names[i] for i in factors_to_plot]
+    n_factors = len(plot_labels)
+
+    fig, axes = plt.subplots(
+        n_factors, 1, figsize=(8, 2 * n_factors), sharex=True,
+        gridspec_kw={'hspace': 0}
+    )
+    if plot_title:
+        fig.suptitle(plot_title)
+    if n_factors == 1:
+        axes = [axes]
+
+    timesteps = range(len(results_df))
+
+    for ax_idx, (mod_idx, factor_label, val_names) in enumerate(zip(factors_to_plot, plot_labels, plot_values)):
+        n_values = len(val_names)
+        avg_probs = np.zeros((len(results_df), n_values))
+
+        for i in timesteps:
+            row_D = results_df.iloc[i][col]
+            if len(row_D) > mod_idx and isinstance(row_D[mod_idx], list):
+                avg = np.array(row_D[mod_idx])
+            else:
+                avg = np.zeros(n_values)
+            avg_probs[i] = avg
+
+        for val_idx, name in enumerate(val_names):
+            axes[ax_idx].plot(timesteps, avg_probs[:, val_idx], label=name)
+
+        axes[ax_idx].set_ylabel(factor_label)
+        if y_prob_limits:
+            axes[ax_idx].set_ylim(0.0, 1.0)
+        axes[ax_idx].legend(loc='upper right', fontsize=10)
+        axes[ax_idx].grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel('Timestep')
+    plt.tight_layout(h_pad=0)
+    plt.subplots_adjust(hspace=0)
+    plt.show()
+
+def plot_transitions(results_df, col='B', plot_title='', states=None, actions=None, factor_idx=0):
+    if states is None or actions is None:
+        raise ValueError("states and actions arguments must be provided.")
+
+    n_states = len(states)
+    n_actions = len(actions)
+    n_transitions = n_states * n_states
+    n_timesteps = len(results_df)
+
+    transition_probs = np.zeros((n_transitions, n_actions, n_timesteps))
+    transition_labels = []
+    for t in range(n_timesteps):
+        b_mat = results_df.iloc[t][col][factor_idx]
+        tr_idx = 0
+        for from_state in range(n_states):
+            for to_state in range(n_states):
+                for action in range(n_actions):
+                    transition_probs[tr_idx, action, t] = b_mat[to_state][from_state][action]
+                if t == 0:
+                    transition_labels.append(f"P({states[to_state]} | {states[from_state]}, action)")
+                tr_idx += 1
+
+    fig, axes = plt.subplots(
+        n_transitions, 1, figsize=(8, 2 * n_transitions),
+        sharex=True, gridspec_kw={'hspace': 0}
+    )
+    if plot_title:
+        fig.suptitle(plot_title)
+    if n_transitions == 1:
+        axes = [axes]
+
+    timesteps = range(n_timesteps)
+
+    for ax_idx in range(n_transitions):
+        for action_idx, action_name in enumerate(actions):
+            axes[ax_idx].plot(
+                timesteps, transition_probs[ax_idx, action_idx, :],
+                label=f"action={action_name}"
+            )
+        axes[ax_idx].set_ylabel(transition_labels[ax_idx])
+        axes[ax_idx].legend(loc='upper right', fontsize=10)
+        axes[ax_idx].grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel('Timestep')
+    plt.tight_layout(h_pad=0)
+    plt.subplots_adjust(hspace=0)
+    plt.show()
+
+def plot_agent_data_focused(final_df_input, hierarchical=False):
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    import numpy as np
+    import ast
+
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(20, 10))
+    plt.subplots_adjust(hspace=0.4, wspace=0.3)
+
+    final_df = final_df_input.copy()
+    timesteps = range(len(final_df))
+
+    cols_to_plot = ['qs_bma', 'obs_label', 'q_pi']
+    if hierarchical:
+        cols_to_plot += ['qo_pi_high', 'qs_high_bma']
+
+    for col in cols_to_plot:
+        final_df[col] = final_df[col].apply(safe_literal_eval)
+
+    def setup_probability_plot(ax, title):
+        ax.set_ylim(-0.1, 1.1)
+        ax.set_yticks(np.linspace(0, 1, 11))
+        ax.set_ylabel('Probability')
+        ax.grid(True, alpha=0.3)
+        ax.set_title(title)
+
+    # --- TOP LEFT ---
+    ax1 = axes[0, 0]
+    setup_probability_plot(ax1, 'Card Probability & Advice Observations')
+    blue_probs = [qs[1][0] for qs in final_df['qs_bma']]
+    ax1.plot(timesteps, blue_probs, label='Posterior Blue Probability', color='blue')
+    obs_advice = [row[0] for row in final_df['obs_label']]
+    advice_y = [1.0 if advice=='blue' else 0.0 if advice=='green' else 0.5 for advice in obs_advice]
+    advice_colors = ['blue' if advice=='blue' else 'green' if advice=='green' else 'grey' for advice in obs_advice]
+    ax1.scatter(timesteps, advice_y, c=advice_colors, s=30, alpha=0.7, edgecolor='black')
+    legend_elements1 = [
+        Line2D([0], [0], marker='o', color='w', label='Blue Advice', markerfacecolor='blue', markersize=8),
+        Line2D([0], [0], marker='o', color='w', label='Green Advice', markerfacecolor='green', markersize=8),
+        Line2D([0], [0], color='blue', label='Posterior Blue Probability')
+    ]
+    ax1.legend(handles=legend_elements1)  # Back inside
+
+    # --- TOP RIGHT ---
+    ax2 = axes[0, 1]
+    setup_probability_plot(ax2, 'Anger State Probabilities with Arousal Markers')
+    prior_angry = [d[2][0] for d in final_df['D']]
+    angry_probs = [qs[2][0] for qs in final_df['qs_bma']]
+    ax2.plot(timesteps, prior_angry, label='Prior Anger', color='black', linestyle='--', linewidth=2.5)
+    ax2.plot(timesteps, angry_probs, label='Posterior Anger', color='#cc0000', linewidth=2.5, alpha=0.5)
+    arousal_states = [row[2] for row in final_df['obs_label']]
+    arousal_y = [1.0 if arousal=='high' else 0.0 for arousal in arousal_states]
+    arousal_colors = ['#ff7f0e' if arousal=='high' else '#2ca02c' for arousal in arousal_states]
+    ax2.scatter(timesteps, arousal_y, c=arousal_colors, marker='o', s=30, alpha=0.7, edgecolor='black')
+    legend_elements2 = [
+        Line2D([0], [0], color='black', linestyle='--', label='Prior Anger'),
+        Line2D([0], [0], color='#cc0000', label='Posterior Anger', alpha=0.5),
+        Line2D([0], [0], marker='o', color='w', label='High Arousal', markerfacecolor='#ff7f0e', markersize=8),
+        Line2D([0], [0], marker='o', color='w', label='Low Arousal', markerfacecolor='#2ca02c', markersize=8)
+    ]
+    ax2.legend(handles=legend_elements2)  # Back inside
+
+    # --- BOTTOM LEFT ---
+    ax3 = axes[1, 0]
+    setup_probability_plot(ax3, 'Policy Selection Probabilities')
+    policy_labels = ['Trust + Green', 'Trust + Blue', 'Distrust + Blue', 'Distrust + Green', 'Trust + Withdraw', 'Distrust + Withdraw']
+    colors = ['green', 'blue', 'red', 'orange', 'purple', 'grey']
+    for i in range(6):
+        policy_probs = [q[i] for q in final_df['q_pi']]
+        ax3.plot(timesteps, policy_probs, label=policy_labels[i], color=colors[i], linewidth=2.5)
+    ax3.legend()  # Back inside, no trust/distrust dots or legend
+
+    # --- BOTTOM RIGHT ---
+    ax4 = axes[1, 1]
+    if hierarchical:
+        setup_probability_plot(ax4, 'Hierarchical Posterior Observation Beliefs Q(o), Real-Time Trust Beliefs, True Trustworthiness')
+        trustworthiness_qo = [qo[0][0] for qo in final_df['qo_pi_high']]
+        affect_qo = [qo[2][0] for qo in final_df['qo_pi_high']]
+        correct_qo = [qo[1][0] for qo in final_df['qo_pi_high']]
+        ax4.plot(timesteps, trustworthiness_qo, label='Trust Expectation', color='grey', linewidth=2.5)
+        ax4.plot(timesteps, affect_qo, label='Calm Expectation', color='orange', linewidth=2.5)
+        ax4.plot(timesteps, correct_qo, label='Blue Correct Expectation', color='purple', linewidth=2.5)
+        prior_trust = [d[0][0] for d in final_df['D']]
+        posterior_trust = [qs[0][0] for qs in final_df['qs_bma']]
+        ax4.plot(timesteps, prior_trust, label='Prior Probability of Trust', color='blue', linestyle='--', linewidth=2)
+        ax4.plot(timesteps, posterior_trust, label='Posterior Probability of Trust', color='blue', linewidth=2)
+        true_trust = final_df['true_trustworthiness']
+        true_y = [1.0 if t == 'trustworthy' else 0.0 for t in true_trust]
+        true_colors = ['blue' if t == 'trustworthy' else 'red' for t in true_trust]
+        ax4.scatter(timesteps, true_y, c=true_colors, marker='o', s=30, alpha=0.7, edgecolor='black', label='True Trustworthiness')
+        legend_elements4 = [
+            Line2D([0], [0], color='grey', label='Trust Expectation'),
+            Line2D([0], [0], color='orange', label='Calm Expectation'),
+            Line2D([0], [0], color='purple', label='Blue Correct Expectation'),
+            Line2D([0], [0], color='blue', linestyle='--', label='Prior Probability of Trust'),
+            Line2D([0], [0], color='blue', label='Posterior Probability of Trust'),
+            Line2D([0], [0], marker='o', color='w', label='True Trustworthiness (Trustworthy)', markerfacecolor='blue', markersize=8),
+            Line2D([0], [0], marker='o', color='w', label='True Trustworthiness (Untrustworthy)', markerfacecolor='red', markersize=8)
+        ]
+        ax4.legend(handles=legend_elements4, loc='lower right', bbox_to_anchor=(1.35, -0.05))  # Remains outside
+    else:
+        setup_probability_plot(ax4, 'Hierarchical Observations (Disabled)')
+        ax4.text(0.5, 0.5, 'Enable with hierarchical=True', ha='center', va='center', fontsize=12, transform=ax4.transAxes)
+
+    # Remove x-axis numbers from all plots but keep ticks and label
+    for ax in axes.flatten():
+        ax.set_xlabel('Timestep', fontsize=10)
+        ax.set_xticks(np.arange(0, len(timesteps), 2))
+        ax.set_xticklabels([])
+
+    return fig, axes
+
 # Andrew Pashea 2025
