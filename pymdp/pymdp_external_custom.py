@@ -378,6 +378,7 @@ def update_C_MMP_distributional(self, obs, lr_pC=1.0, distr_obs=False, initial_s
           print(f"self.pC = {self.pC}")
     C = copy.deepcopy(self.C)
     pC = copy.deepcopy(self.pC)
+    self.lr_pC = lr_pC
 
     if not distr_obs:
         if monitoring == True:
@@ -437,6 +438,7 @@ def update_E(self, q_pi, lr_pE=1.0, initial_scale=1.0, monitoring=False):
           print(f"No pE attribute found. Defining prior pE with scale {initial_scale}:")
           print(f"self.pE = {self.pE}")
 
+      self.lr_pE = lr_pE
       if self.pE is not None:
           qE = copy.deepcopy(self.pE[0]) + np.dot(lr_pE, copy.deepcopy(q_pi))     #)
           # Update Dirichlet parameters
