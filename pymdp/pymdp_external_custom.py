@@ -1074,7 +1074,7 @@ def plot_C_modalities(results_df, y_prob_limits=False, modalities_to_plot=[0,1,2
     modality_labels = ['Advice', 'Feedback', 'Arousal', 'Choice']
     value_names = [
         ['blue', 'green', 'null'],
-        ['Correct', 'Incorrect', 'No Feedback','Withdraw],
+        ['Correct', 'Incorrect', 'No Feedback','Withdraw'],
         ['High', 'Low'],
         ['blue', 'green', 'null', 'withdraw']
     ]
