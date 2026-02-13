@@ -909,13 +909,13 @@ def plot_model(df):
     ]
     obs_modality_labels = [
         ['blue', 'green', 'null'],       # advice_obs
-        ['correct', 'incorrect', 'null'],# feedback_obs
+        ['correct', 'incorrect', 'null','withdraw'],# feedback_obs     ['correct', 'incorrect', 'null'],# feedback_obs
         ['high', 'low'],                 # arousal_obs
         ['blue', 'green', 'null', 'withdraw'] # choice_obs
     ]
     modality_names = ['advice_obs', 'feedback_obs', 'arousal_obs', 'choice_obs']
     modality_colors = {
-        'blue':'#1f77b4', 'green':'#2ca02c', 'null':'#7f7f7f', 'correct':'#FFD700', 'incorrect':'#C41236',
+        'blue':'#1f77b4', 'green':'#2ca02c', 'null':'#7f7f7f', 'correct':'#FFD700', 'incorrect':'#C41236', 'withdraw':'#030205',
         'high':'#e377c2', 'low':'#8c564b', 'withdraw':'#9467bd'
     }
 
@@ -1074,7 +1074,7 @@ def plot_C_modalities(results_df, y_prob_limits=False, modalities_to_plot=[0,1,2
     modality_labels = ['Advice', 'Feedback', 'Arousal', 'Choice']
     value_names = [
         ['blue', 'green', 'null'],
-        ['Correct', 'Incorrect', 'No Feedback'],
+        ['Correct', 'Incorrect', 'No Feedback','Withdraw],
         ['High', 'Low'],
         ['blue', 'green', 'null', 'withdraw']
     ]
