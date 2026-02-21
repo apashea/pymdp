@@ -192,6 +192,8 @@ def infer_states_info(self, observation, distr_obs=False):
         """
         Test version of ``infer_states()`` that additionally returns intermediate variables of MMP, such as
         the prediction errors and intermediate beliefs from the optimization. Used for benchmarking against SPM outputs.
+        xn : List of intermediate posterior beliefs per VB iteration using marginal message-passing
+        vn : List of prediction errors from state estimation per VB iteration using marginal message-passing
         """
         observation = tuple(observation) if not distr_obs else observation
 
