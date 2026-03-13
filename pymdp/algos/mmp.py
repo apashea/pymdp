@@ -106,9 +106,9 @@ def run_mmp(
                     #     print(f"[DEBUG run_mmp] qs_seq[{t-1}][{f}]: {qs_seq[t-1][f]}")  
                       
                     action_idx = int(policy[t - 1, f])  
-                    if t == 1 and f == 0:  
-                        print(f"[DEBUG run_mmp] action_idx: {action_idx}")  
-                        print(f"[DEBUG run_mmp] B[{f}][:, :, {action_idx}].shape: {B[f][:, :, action_idx].shape}")  
+                    # if t == 1 and f == 0:  
+                    #     print(f"[DEBUG run_mmp] action_idx: {action_idx}")  
+                    #     print(f"[DEBUG run_mmp] B[{f}][:, :, {action_idx}].shape: {B[f][:, :, action_idx].shape}")  
                       
                     past_msg = B[f][:, :, action_idx].dot(qs_seq[t - 1][f])  
                     lnB_past = spm_log_single(past_msg)  
