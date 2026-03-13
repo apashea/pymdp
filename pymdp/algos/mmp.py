@@ -96,14 +96,14 @@ def run_mmp(
                 if t == 0:  
                     lnB_past = spm_log_single(prior[f])  
                 else:  
-                    # Debug statements for the problematic case  
-                    if t == 1 and f == 0:  
-                        print(f"[DEBUG run_mmp] t={t}, f={f}")  
-                        print(f"[DEBUG run_mmp] B[{f}].shape: {B[f].shape}")  
-                        print(f"[DEBUG run_mmp] policy.shape: {policy.shape}")  
-                        print(f"[DEBUG run_mmp] policy[{t-1}, {f}]: {policy[t-1, f]}")  
-                        print(f"[DEBUG run_mmp] qs_seq[{t-1}][{f}].shape: {qs_seq[t-1][f].shape}")  
-                        print(f"[DEBUG run_mmp] qs_seq[{t-1}][{f}]: {qs_seq[t-1][f]}")  
+                    # # Debug statements for the problematic case  
+                    # if t == 1 and f == 0:  
+                    #     print(f"[DEBUG run_mmp] t={t}, f={f}")  
+                    #     print(f"[DEBUG run_mmp] B[{f}].shape: {B[f].shape}")  
+                    #     print(f"[DEBUG run_mmp] policy.shape: {policy.shape}")  
+                    #     print(f"[DEBUG run_mmp] policy[{t-1}, {f}]: {policy[t-1, f]}")  
+                    #     print(f"[DEBUG run_mmp] qs_seq[{t-1}][{f}].shape: {qs_seq[t-1][f].shape}")  
+                    #     print(f"[DEBUG run_mmp] qs_seq[{t-1}][{f}]: {qs_seq[t-1][f]}")  
                       
                     action_idx = int(policy[t - 1, f])  
                     if t == 1 and f == 0:  
