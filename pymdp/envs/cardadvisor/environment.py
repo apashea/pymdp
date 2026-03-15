@@ -236,13 +236,12 @@ def make_env_rules_df(
     df = pd.DataFrame.from_records(records)
     return df
 
-
-# Print all possible combinations of environment dynamics
-env_rules_df = make_env_rules_df(
-    CardAdvisor,
-    true_trustworthiness_list=['trustworthy','untrustworthy'],
-    true_color_list=['blue','green'], 
-    choice_trust_actions=['trust','distrust'],
-    choice_card_actions=['blue','green','null','withdraw']
-)
-display(env_rules_df.sort_values('card_action'))
+# # Example usage of make_env_rules_df(): Print all possible combinations of environment dynamics
+# env_rules_df = make_env_rules_df(
+#     CardAdvisor,
+#     true_trustworthiness_list=['trustworthy','untrustworthy'],
+#     true_color_list=['blue','green'], 
+#     choice_trust_actions=['trust','distrust'],
+#     choice_card_actions=['blue','green','null','withdraw']
+# )
+# display(env_rules_df.sort_values('card_action'))
