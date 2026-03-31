@@ -243,29 +243,67 @@ def infer_states_info(self, observation, distr_obs=False):
 
         return qs, xn, vn
 
-def update_A_MMP_distributional(agent, obs, distr_obs=False):
-    # Process observations based on distr_obs flag
+# def update_A_MMP_distributional(agent, obs, distr_obs=False):
+#     # Process observations based on distr_obs flag
+#     if not distr_obs:
+#         # Convert integer observations to distributional format
+#         num_modalities = len(agent.A)
+#         num_observations = [agent.A[m].shape[0] for m in range(num_modalities)]
+#         obs_processed = utils.process_observation(obs, num_modalities, num_observations)
+#         obs = utils.to_obj_array(obs_processed)
+
+#     # Bayesian model average
+#     current_beliefs_by_policy = utils.obj_array(len(agent.policies))
+#     for p_idx in range(len(agent.policies)):
+#         current_beliefs_by_policy[p_idx] = agent.qs[p_idx][0]
+
+#     qs_for_learning = inference.average_states_over_policies(
+#         current_beliefs_by_policy,
+#         agent.q_pi
+#     )
+
+#     # Dirichlet update using distributional observations
+#     for m in range(len(obs)):
+#         update = maths.spm_cross(obs[m], qs_for_learning)
+#         agent.pA[m] += agent.lr_pA * update
+#         agent.A[m] = utils.norm_dist(agent.pA[m])
+
+#     return agent.A
+
+def update_A_MMP_distributional(agent, obs, distr_obs=False, masking=True):
+    """
+    Distributional A-update for MMP that mirrors Agent.update_A:
+    - uses Bayesian model average over policies internally
+    - optionally applies masking by existing A support (masking=True by default)
+    """
+
+    # 1. Process observations into one-hot(s) per modality if needed
     if not distr_obs:
-        # Convert integer observations to distributional format
         num_modalities = len(agent.A)
         num_observations = [agent.A[m].shape[0] for m in range(num_modalities)]
         obs_processed = utils.process_observation(obs, num_modalities, num_observations)
         obs = utils.to_obj_array(obs_processed)
 
-    # Bayesian model average
+    # 2. Build current beliefs per policy at current timestep
     current_beliefs_by_policy = utils.obj_array(len(agent.policies))
     for p_idx in range(len(agent.policies)):
         current_beliefs_by_policy[p_idx] = agent.qs[p_idx][0]
 
+    # 3. Bayesian model average over policies
     qs_for_learning = inference.average_states_over_policies(
         current_beliefs_by_policy,
         agent.q_pi
     )
 
-    # Dirichlet update using distributional observations
+    # 4. Dirichlet update using distributional observations
     for m in range(len(obs)):
-        update = maths.spm_cross(obs[m], qs_for_learning)
-        agent.pA[m] += agent.lr_pA * update
+        dfda = maths.spm_cross(obs[m], qs_for_learning)
+
+        if masking:
+            # match update_obs_likelihood_dirichlet semantics
+            dfda = dfda * (agent.A[m] > 0).astype(float)
+
+        agent.pA[m] = agent.pA[m] + agent.lr_pA * dfda
         agent.A[m] = utils.norm_dist(agent.pA[m])
 
     return agent.A
