@@ -46,22 +46,52 @@ def infer_states_info_monitoring(
         arr[value] = 1.0  
         return arr  
   
+    # def process_observation(obs, num_modalities, num_observations):  
+    #     """EXACT pymdp implementation [4](#52-3) """  
+    #     if isinstance(obs, np.ndarray) and not is_obj_array(obs):  
+    #         assert num_modalities == 1, "If `obs` is a 1D numpy array, `num_modalities` must be equal to 1"  
+    #         assert len(np.where(obs)[0]) == 1, "If `obs` is a 1D numpy array, it must be a one hot vector (e.g. np.array([0.0, 1.0, 0.0, ....]))"  
+  
+    #     if isinstance(obs, (int, np.integer)):  
+    #         obs = onehot(obs, num_observations[0])  
+  
+    #     if isinstance(obs, tuple) or isinstance(obs,list):  
+    #         obs_arr_arr = obj_array(num_modalities)  
+    #         for m in range(num_modalities):  
+    #             obs_arr_arr[m] = onehot(obs[m], num_observations[m])  
+    #         obs = obs_arr_arr  
+  
+    #     return obs  
+
+    def process_observation_seq(obs_seq, num_modalities, num_observations):  
+        """  
+        EXACT pymdp implementation from utils.py lines 269-281  
+        Helper function for formatting observations      
+        """  
+        proc_obs_seq = obj_array(len(obs_seq))  
+        for t, obs_t in enumerate(obs_seq):  
+            proc_obs_seq[t] = process_observation(obs_t, num_modalities, num_observations)  
+        return proc_obs_seq  
+      
     def process_observation(obs, num_modalities, num_observations):  
-        """EXACT pymdp implementation [4](#52-3) """  
+        """  
+        EXACT pymdp implementation from utils.py lines 283-312  
+        Helper function for formatting observations      
+        """  
         if isinstance(obs, np.ndarray) and not is_obj_array(obs):  
             assert num_modalities == 1, "If `obs` is a 1D numpy array, `num_modalities` must be equal to 1"  
-            assert len(np.where(obs)[0]) == 1, "If `obs` is a 1D numpy array, it must be a one hot vector (e.g. np.array([0.0, 1.0, 0.0, ....]))"  
-  
+            assert len(np.where(obs)[0]) == 1, "If `obs` is a 1D numpy array, it must be a one hot vector"  
+      
         if isinstance(obs, (int, np.integer)):  
             obs = onehot(obs, num_observations[0])  
-  
+      
         if isinstance(obs, tuple) or isinstance(obs,list):  
             obs_arr_arr = obj_array(num_modalities)  
             for m in range(num_modalities):  
                 obs_arr_arr[m] = onehot(obs[m], num_observations[m])  
             obs = obs_arr_arr  
-  
-        return obs  
+      
+        return obs
   
     def obj_array_uniform(shape_list):  
         """EXACT pymdp implementation [5](#52-4) """  
@@ -144,16 +174,16 @@ def infer_states_info_monitoring(
         num_states = [B[f].shape[0] for f in range(num_factors)]  
         return num_obs, num_states, num_modalities, num_factors  
   
-    def process_observation_seq(obs_seq, num_modalities, num_observations):  
-        """Process observation sequence"""  
-        if not is_obj_array(obs_seq):  
-            obs_seq = to_obj_array(obs_seq)  
+    # def process_observation_seq(obs_seq, num_modalities, num_observations):  
+    #     """Process observation sequence"""  
+    #     if not is_obj_array(obs_seq):  
+    #         obs_seq = to_obj_array(obs_seq)  
           
-        processed_seq = obj_array(len(obs_seq))  
-        for t in range(len(obs_seq)):  
-            processed_seq[t] = process_observation(obs_seq[t], num_modalities, num_observations)  
+    #     processed_seq = obj_array(len(obs_seq))  
+    #     for t in range(len(obs_seq)):  
+    #         processed_seq[t] = process_observation(obs_seq[t], num_modalities, num_observations)  
           
-        return processed_seq  
+    #     return processed_seq  
   
     def get_joint_likelihood_seq(A, obs_seq, qs_seq, B):  
         """Compute joint likelihood sequence"""  
