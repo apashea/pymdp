@@ -42,6 +42,8 @@ def infer_states_info_monitoring(
       
     def spm_dot(X, x, dims_to_omit=None):  
         """EXACT pymdp implementation with proper tensor contraction"""  
+        from itertools import chain  
+          
         # Handle object array case  
         if hasattr(x, '__len__') and not isinstance(x, str):  
             dims = list(range(X.ndim - len(x), len(x) + X.ndim - len(x)))  
@@ -50,9 +52,9 @@ def infer_states_info_monitoring(
             x = [x]  
           
         if dims_to_omit is not None:  
-            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]) for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]  
+            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]  
         else:  
-            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]]) for xdim_i in range(len(x)))) + [[0]]  
+            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x))))) + [[0]]  
           
         Y = np.einsum(*arg_list)  
           
@@ -61,7 +63,7 @@ def infer_states_info_monitoring(
             Y = Y.item()  
             Y = np.array([Y]).astype("float64")  
           
-        return Y  
+        return Y
       
     def norm_dist(dist):  
         """EXACT pymdp implementation"""  
