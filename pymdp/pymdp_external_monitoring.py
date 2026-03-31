@@ -115,9 +115,9 @@ def infer_states_info_monitoring(
             processed_seq[t] = obs_array  
         return processed_seq  
       
-    def get_joint_likelihood_seq(A, obs_seq, qs_seq):  
-        """Compute joint likelihood sequence"""  
-        num_obs, num_states, num_modalities, num_factors = get_model_dimensions(A, None)  
+    def get_joint_likelihood_seq(A, obs_seq, qs_seq, B):  
+        """Compute joint likelihood sequence - FIXED: Pass B parameter"""  
+        num_obs, num_states, num_modalities, num_factors = get_model_dimensions(A, B)  
         infer_len = len(obs_seq)  
           
         lh_seq = obj_array(infer_len)  
@@ -155,7 +155,7 @@ def infer_states_info_monitoring(
         vn = None  
           
     elif self.inference_algo == "MMP":  
-        # MMP inference  
+        # MMP inference - following reference infer_states_info() exactly  
         self.prev_obs.append(observation)  
         if len(self.prev_obs) > self.inference_horizon:  
             latest_obs = self.prev_obs[-self.inference_horizon:]  
@@ -169,9 +169,9 @@ def infer_states_info_monitoring(
         if prev_actions is not None:  
             prev_actions = np.stack(prev_actions, 0)  
           
-        # Get model dimensions  
+        # Get model dimensions - FIXED: Call after ensuring B is accessible  
         num_obs, num_states, num_modalities, num_factors = get_model_dimensions(self.A, self.B)  
-  
+          
         # Process observations  
         prev_obs = process_observation_seq(latest_obs, num_modalities, num_obs)  
           
@@ -199,8 +199,8 @@ def infer_states_info_monitoring(
             for t in range(infer_len):  
                 qs_seq[t] = obj_array_uniform(num_states)  
               
-            # Get joint likelihood sequence  
-            lh_seq = get_joint_likelihood_seq(self.A, prev_obs, qs_seq)  
+            # Get joint likelihood sequence - FIXED: Pass self.B  
+            lh_seq = get_joint_likelihood_seq(self.A, prev_obs, qs_seq, self.B)  
               
             # Variational iterations  
             xn = []  
