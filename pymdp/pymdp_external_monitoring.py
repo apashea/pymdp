@@ -25,14 +25,14 @@ def infer_states_info_monitoring(
     # ===== MATHEMATICAL HELPER FUNCTIONS =====  
       
     def softmax(dist):  
-        """EXACT pymdp implementation<cite repo="apashea/pymdp" path="pymdp/maths.py" start="326-334" />"""  
+        """EXACT pymdp implementation"""  
         output = dist - dist.max(axis=0)  
         output = np.exp(output)  
         output = output / np.sum(output, axis=0)  
         return output  
       
     def spm_log_single(arr):  
-        """EXACT pymdp implementation<cite repo="apashea/pymdp" path="pymdp/maths.py" start="263-267" />"""  
+        """EXACT pymdp implementation"""  
         EPS_VAL = 1e-16  
         return np.log(arr + EPS_VAL)  
       
@@ -41,31 +41,30 @@ def infer_states_info_monitoring(
         return A / (np.sum(A, axis=0) + 1e-16)  
       
     def spm_dot(X, x, dims_to_omit=None):  
-        """EXACT pymdp implementation<cite repo="apashea/pymdp" path="pymdp/maths.py" start="18-54" />"""  
-        # Construct dims to perform dot product on  
+        """EXACT pymdp implementation with proper tensor contraction"""  
+        # Handle object array case  
         if hasattr(x, '__len__') and not isinstance(x, str):  
-            # Object array case  
             dims = list(range(X.ndim - len(x), len(x) + X.ndim - len(x)))  
         else:  
             dims = [1]  
-            x = [x]  # Convert to list for uniform handling  
-  
+            x = [x]  
+          
         if dims_to_omit is not None:  
-            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]  
+            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]) for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]  
         else:  
-            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x))))) + [[0]]  
-  
+            arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]]) for xdim_i in range(len(x)))) + [[0]]  
+          
         Y = np.einsum(*arg_list)  
-  
-        # check to see if `Y` is a scalar  
+          
+        # Handle scalar case  
         if np.prod(Y.shape) <= 1.0:  
             Y = Y.item()  
             Y = np.array([Y]).astype("float64")  
-  
+          
         return Y  
       
     def norm_dist(dist):  
-        """EXACT pymdp implementation<cite repo="apashea/pymdp" path="pymdp/utils.py" start="217-225" />"""  
+        """EXACT pymdp implementation"""  
         if dist.ndim == 3:  
             new_dist = np.zeros_like(dist)  
             for c in range(dist.shape[2]):  
@@ -100,14 +99,14 @@ def infer_states_info_monitoring(
         return out  
       
     def obj_array_zeros_list(shape_list):  
-        """Create nested object array with zeros"""  
+        """Create nested object arrays"""  
         out = obj_array(len(shape_list))  
         for i, shape in enumerate(shape_list):  
-            out[i] = np.zeros(shape)  
+            out[i] = obj_array_zeros(shape)  
         return out  
       
     def norm_dist_obj_arr(obj_array):  
-        """Normalize object array of distributions"""  
+        """Normalize object array"""  
         for i in range(len(obj_array)):  
             obj_array[i] = norm_dist(obj_array[i])  
         return obj_array  
@@ -115,52 +114,56 @@ def infer_states_info_monitoring(
     def get_model_dimensions(A, B):  
         """Extract model dimensions from A and B matrices"""  
         num_modalities = len(A)  
-        num_obs = [A[m].shape[0] for m in range(num_modalities)]  
-          
         num_factors = len(B)  
+        num_obs = [A[m].shape[0] for m in range(num_modalities)]  
         num_states = [B[f].shape[0] for f in range(num_factors)]  
-          
-        return num_obs, num_modalities, num_states, num_factors  
+        return num_obs, num_states, num_modalities, num_factors  
       
     def process_observation_seq(obs_seq, num_modalities, num_obs):  
-        """Process observation sequence into one-hot format"""  
+        """Process observation sequence into object arrays"""  
         processed_seq = obj_array(len(obs_seq))  
         for t, obs_t in enumerate(obs_seq):  
             obs_array = obj_array(num_modalities)  
             for m in range(num_modalities):  
-                obs_m = np.zeros(num_obs[m])  
-                obs_m[int(obs_t[m])] = 1.0  
-                obs_array[m] = obs_m  
+                if isinstance(obs_t[m], (int, np.integer)):  
+                    obs_onehot = np.zeros(num_obs[m])  
+                    obs_onehot[obs_t[m]] = 1.0  
+                    obs_array[m] = obs_onehot  
+                else:  
+                    obs_array[m] = obs_t[m]  
             processed_seq[t] = obs_array  
         return processed_seq  
       
     def get_joint_likelihood_seq(A, obs_seq, num_states):  
-        """Compute joint likelihood sequence for observations"""  
-        num_modalities = len(A)  
-        lh_seq = obj_array(len(obs_seq))  
+        """Compute joint likelihood sequence"""  
+        infer_len = len(obs_seq)  
+        lh_seq = obj_array(infer_len)  
           
-        for t, obs_t in enumerate(obs_seq):  
+        for t in range(infer_len):  
+            obs_t = obs_seq[t]  
             lh_joint = np.ones(num_states)  
-            for m in range(num_modalities):  
+            for m in range(len(obs_t)):  
                 modality_lh = A[m].T @ obs_t[m]  
                 lh_joint = lh_joint * modality_lh  
-            lh_seq[t] = lh_joint  
+            lh_seq[t] = spm_log_single(lh_joint)  
           
         return lh_seq  
       
     def get_expected_states(qs, B, action):  
-        """Compute expected states given beliefs and action"""  
+        """Compute expected states given action"""  
         num_factors = len(qs)  
-        expected_states = obj_array(num_factors)  
+        expected_qs = obj_array(num_factors)  
           
         for f in range(num_factors):  
             if action.ndim == 1:  
-                action_f = int(action[f])  
+                action_idx = int(action[f])  
             else:  
-                action_f = int(action[0, f])  
-            expected_states[f] = B[f][:, :, action_f] @ qs[f]  
+                action_idx = int(action[0, f])  
+              
+            B_f = B[f][:, :, action_idx]  
+            expected_qs[f] = B_f @ qs[f]  
           
-        return expected_states  
+        return expected_qs  
       
     def sample(p):  
         """Sample from categorical distribution"""  
@@ -169,10 +172,11 @@ def infer_states_info_monitoring(
     # ===== MAIN INFERENCE LOGIC =====  
       
     observation = tuple(observation) if not distr_obs else observation  
-  
+      
     if not hasattr(self, "qs"):  
         self.reset()  
-  
+      
+    # VANILLA mode  
     if self.inference_algo == "VANILLA":  
         if self.action is not None:  
             empirical_prior = get_expected_states(  
@@ -181,27 +185,17 @@ def infer_states_info_monitoring(
         else:  
             empirical_prior = self.D  
           
-        # VANILLA inference: compute posterior using Bayes' rule  
-        qs = obj_array_uniform([self.A[m].shape[1] for m in range(len(self.A))])  
-          
-        for f in range(len(qs)):  
-            # Start with prior  
-            if self.action is not None:  
-                qs[f] = empirical_prior[f]  
-            else:  
-                qs[f] = self.D[f]  
-              
-            # Multiply by likelihood for each modality  
-            for m in range(len(self.A)):  
-                likelihood_m = self.A[m][:, int(observation[m])]  
-                qs[f] = qs[f] * likelihood_m  
-              
-            # Normalize  
-            qs[f] = qs[f] / np.sum(qs[f])  
+        # Compute posterior using Bayes' rule  
+        qs = obj_array(len(self.num_states))  
+        for f in range(len(self.num_states)):  
+            likelihood = self.A[f].T @ observation[f] if hasattr(observation[f], '__len__') else self.A[f][:, observation[f]]  
+            posterior = likelihood * empirical_prior[f]  
+            qs[f] = posterior / np.sum(posterior)  
           
         xn = None  
         vn = None  
           
+    # MMP mode  
     elif self.inference_algo == "MMP":  
         # Update observation history  
         self.prev_obs.append(observation)  
@@ -216,54 +210,59 @@ def infer_states_info_monitoring(
         prev_actions = latest_actions  
         if prev_actions is not None:  
             prev_actions = np.stack(prev_actions, 0)  
-  
+          
         # Get model dimensions  
-        num_obs, num_modalities, num_states, num_factors = get_model_dimensions(self.A, self.B)  
-  
+        num_obs, num_states, num_modalities, num_factors = get_model_dimensions(self.A, self.B)  
+          
         # Process observations  
         prev_obs = process_observation_seq(latest_obs, num_modalities, num_obs)  
           
-        # Get joint likelihood sequence  
-        lh_seq = get_joint_likelihood_seq(self.A, prev_obs, num_states)  
-  
-        # Initialize variables for MMP  
+        # Initialize variables  
+        infer_len = len(prev_obs)  
         past_len = len(prev_obs)  
-        infer_len = past_len + self.policy_len  
-        future_cutoff = past_len - 1  
+        future_len = self.policy_len  
+        num_policies = len(self.policies)  
           
         # Initialize belief sequences  
-        qs_seq_pi = obj_array(len(self.policies))  
-        xn_seq_pi = obj_array(len(self.policies))  
-        vn_seq_pi = obj_array(len(self.policies))  
-        F = np.zeros(len(self.policies))  
+        qs_seq_pi = obj_array(num_policies)  
+        xn_seq_pi = obj_array(num_policies)  
+        vn_seq_pi = obj_array(num_policies)  
+        F = np.zeros(num_policies)  
           
-        # Get prior  
-        if hasattr(self, 'latest_belief'):  
-            prior = self.latest_belief  
-        else:  
-            prior = self.D  
-  
+        # Get joint likelihood  
+        lh_seq = get_joint_likelihood_seq(self.A, prev_obs, num_states)  
+          
         # Process each policy  
         for p_idx, policy in enumerate(self.policies):  
             # Initialize belief sequence for this policy  
-            qs_seq = obj_array(infer_len)  
+            qs_seq = obj_array_zeros_list([num_states] * infer_len)  
+              
+            # Initialize with uniform beliefs  
             for t in range(infer_len):  
                 qs_seq[t] = obj_array_uniform(num_states)  
               
-            # Set prior at t=0  
-            qs_seq[0] = prior  
+            # Set prior  
+            if hasattr(self, 'latest_belief'):  
+                prior = self.latest_belief  
+            else:  
+                prior = obj_array_uniform(num_states)  
+              
+            # Copy prior to first timestep  
+            qs_seq[0] = obj_array(num_factors)  
+            for f in range(num_factors):  
+                qs_seq[0][f] = prior[f].copy()  
               
             # Initialize intermediate variables  
             xn = []  
             vn = []  
-            shape_list = [[num_states[f], infer_len] for f in range(num_factors)]  
+            F_policy = 0.0  
               
-            # Main variational iterations  
+            # Variational iterations  
             for itr in range(num_iter):  
-                xn_itr_all_factors = obj_array_zeros_list(shape_list)  
-                vn_itr_all_factors = obj_array_zeros_list(shape_list)  
-                F_policy = 0.0  
+                xn_itr_all_factors = obj_array_zeros([num_factors, infer_len])  
+                vn_itr_all_factors = obj_array_zeros([num_factors, infer_len])  
                   
+                # Update beliefs for each timestep and factor  
                 for t in range(infer_len):  
                     for f in range(num_factors):  
                         # Likelihood term  
@@ -276,21 +275,21 @@ def infer_states_info_monitoring(
                         if t == 0:  
                             lnB_past = spm_log_single(prior[f])  
                         else:  
-                            past_msg = self.B[f][:, :, int(policy[t - 1, f])] @ qs_seq[t - 1][f]  
+                            past_msg = self.B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])  
                             lnB_past = spm_log_single(past_msg)  
                           
                         # Future message  
-                        if t >= future_cutoff:  
-                            lnB_future = spm_log_single(qs_seq[infer_len - 1][f])  
+                        if t >= infer_len - 1:  
+                            lnB_future = qs_seq[t][f]  # qs_T[f]  
                         else:  
-                            future_msg = self.B[f][:, :, int(policy[t, f])] @ qs_seq[t + 1][f]  
+                            future_msg = self.B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])  
                             lnB_future = spm_log_single(future_msg)  
                           
                         # Belief update  
                         if grad_descent:  
                             sx = qs_seq[t][f]  
                             lnqs = spm_log_single(sx)  
-                            coeff = 1 if (t >= future_cutoff) else 2  
+                            coeff = 1 if (t >= infer_len - 1) else 2  
                             err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs  
                             vn_tmp = err - err.mean()  
                             lnqs = lnqs + tau * vn_tmp  
@@ -307,22 +306,22 @@ def infer_states_info_monitoring(
                             vn_itr_all_factors[f][:, t] = np.copy(vn_tmp)  
                         else:  
                             qs_seq[t][f] = softmax(lnA + lnB_past + lnB_future)  
-                      
-                    # Store iteration results  
-                    xn.append(xn_itr_all_factors)  
-                    vn.append(vn_itr_all_factors)  
-  
+                  
+                # Store iteration results  
+                xn.append(xn_itr_all_factors)  
+                vn.append(vn_itr_all_factors)  
+              
             # Store policy results  
             qs_seq_pi[p_idx] = qs_seq  
             xn_seq_pi[p_idx] = xn  
             vn_seq_pi[p_idx] = vn  
             F[p_idx] = F_policy  
-  
+          
         # Set final beliefs and free energy  
         qs = qs_seq_pi  
         self.F = F  
           
-        # Flatten xn and vn for return format (matching reference implementation)  
+        # Flatten xn and vn for return format  
         xn_all = []  
         vn_all = []  
         for p_idx in range(len(self.policies)):  
