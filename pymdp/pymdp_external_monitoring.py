@@ -36,10 +36,6 @@ def infer_states_info_monitoring(
         EPS_VAL = 1e-16  
         return np.log(arr + EPS_VAL)  
       
-    def spm_norm(A):  
-        """Normalize columns of matrix A to sum to 1"""  
-        return A / (np.sum(A, axis=0) + 1e-16)  
-      
     def spm_dot(X, x, dims_to_omit=None):  
         """EXACT pymdp implementation with proper tensor contraction"""  
         # Handle object array case  
@@ -77,125 +73,89 @@ def infer_states_info_monitoring(
         """Create object array"""  
         if isinstance(shape, int):  
             return np.empty(shape, dtype=object)  
-        elif isinstance(shape, (list, tuple)):  
-            return np.empty(shape, dtype=object)  
         else:  
-            return np.empty(1, dtype=object)  
+            return np.empty(len(shape), dtype=object)  
       
-    def obj_array_uniform(num_states):  
-        """FIXED: Create uniform belief object array matching pymdp exactly"""  
-        arr = obj_array(len(num_states))  
-        for i, shape in enumerate(num_states):  
-            arr[i] = norm_dist(np.ones(shape))  
-        return arr  
-      
-    def obj_array_zeros(num_states):  
-        """Create zeros object array"""  
-        arr = obj_array(len(num_states))  
-        for i, shape in enumerate(num_states):  
+    def obj_array_zeros(shape_list):  
+        """Create object array with zeros"""  
+        arr = obj_array(len(shape_list))  
+        for i, shape in enumerate(shape_list):  
             arr[i] = np.zeros(shape)  
         return arr  
       
+    def obj_array_uniform(shape_list):  
+        """Create object array with uniform distributions"""  
+        arr = obj_array(len(shape_list))  
+        for i, shape in enumerate(shape_list):  
+            arr[i] = norm_dist(np.ones(shape))  
+        return arr  
+      
     def get_model_dimensions(A, B):  
-        """Extract model dimensions from A and B matrices"""  
-        if A is not None:  
-            num_modalities = len(A)  
-            num_obs = [A[m].shape[0] for m in range(num_modalities)]  
-        else:  
-            num_modalities = 0  
-            num_obs = []  
-          
+        """Extract model dimensions"""  
+        num_modalities = len(A)  
         num_factors = len(B)  
+        num_obs = [A[m].shape[0] for m in range(num_modalities)]  
         num_states = [B[f].shape[0] for f in range(num_factors)]  
-          
         return num_obs, num_states, num_modalities, num_factors  
       
     def process_observation_seq(obs_seq, num_modalities, num_obs):  
-        """Process observation sequence into object array format"""  
-        obs_processed = obj_array(len(obs_seq))  
+        """Process observation sequence"""  
+        processed_seq = obj_array(len(obs_seq))  
         for t, obs_t in enumerate(obs_seq):  
-            obs_t_array = obj_array(num_modalities)  
+            if not isinstance(obs_t, (list, tuple, np.ndarray)):  
+                obs_t = [obs_t]  
+            obs_array = obj_array(num_modalities)  
             for m in range(num_modalities):  
-                if hasattr(obs_t[m], '__len__'):  
-                    obs_t_array[m] = obs_t[m]  
+                if isinstance(obs_t[m], (int, np.integer)):  
+                    obs_onehot = np.zeros(num_obs[m])  
+                    obs_onehot[obs_t[m]] = 1.0  
+                    obs_array[m] = obs_onehot  
                 else:  
-                    one_hot = np.zeros(num_obs[m])  
-                    one_hot[obs_t[m]] = 1.0  
-                    obs_t_array[m] = one_hot  
-            obs_processed[t] = obs_t_array  
-        return obs_processed  
+                    obs_array[m] = obs_t[m]  
+            processed_seq[t] = obs_array  
+        return processed_seq  
       
-    def get_joint_likelihood_seq(A, obs_seq, num_states, num_modalities):  
-        """FIXED: Compute joint likelihood across all factors"""  
-        T = len(obs_seq)  
-        lh_seq = obj_array(T)  
+    def get_joint_likelihood_seq(A, obs_seq, qs_seq):  
+        """Compute joint likelihood sequence"""  
+        num_obs, num_states, num_modalities, num_factors = get_model_dimensions(A, None)  
+        infer_len = len(obs_seq)  
           
-        for t in range(T):  
-            lh_joint = np.ones(num_states)  # Use full num_states shape  
+        lh_seq = obj_array(infer_len)  
+        for t in range(infer_len):  
+            lh_t = obj_array(num_modalities)  
             for m in range(num_modalities):  
-                modality_lh = A[m].T @ obs_seq[t][m]  
-                lh_joint = lh_joint * modality_lh  
-            lh_seq[t] = lh_joint  
-              
-        return lh_seq  
-      
-    def to_obj_array(arr):  
-        """Convert to object array if needed"""  
-        if not hasattr(arr, '__len__'):  
-            return np.array([arr])  
-        return arr  
-      
-    def get_expected_states(qs, B, actions):  
-        """Compute expected states given actions"""  
-        num_factors = len(qs)  
-        expected_states = obj_array(num_factors)  
+                # Compute likelihood for this modality  
+                likelihood_m = A[m].T @ obs_seq[t][m]  
+                lh_t[m] = likelihood_m  
+            lh_seq[t] = lh_t  
           
-        for f in range(num_factors):  
-            action_f = int(actions[f])  
-            expected_states[f] = B[f][:, :, action_f].T @ qs[f]  
-              
-        return expected_states  
-      
-    def sample(probabilities):  
-        """Sample from categorical distribution"""  
-        return np.random.choice(len(probabilities), p=probabilities)  
+        return lh_seq  
       
     # ===== MAIN INFERENCE LOGIC =====  
       
-    # Handle VANILLA inference  
     if self.inference_algo == "VANILLA":  
+        # VANILLA inference  
         if self.action is not None:  
-            empirical_prior = get_expected_states(  
-                self.qs, self.B, self.action.reshape(1, -1)  
-            )  
+            empirical_prior = self.B[0][:, :, int(self.action[0])].dot(self.qs[0])  
         else:  
-            empirical_prior = self.D  
-              
-        # Simple Bayesian update for VANILLA mode  
-        qs = obj_array(len(self.num_states))  
-        for f in range(len(self.num_states)):  
-            if hasattr(empirical_prior, '__len__'):  
-                prior_f = empirical_prior[f]  
-            else:  
-                prior_f = empirical_prior  
-                  
-            # Compute likelihood  
-            likelihood = np.ones(self.num_states[f])  
-            for m in range(len(self.A)):  
-                obs_idx = observation[m] if not distr_obs else observation[m]  
-                if hasattr(obs_idx, '__len__'):  
-                    likelihood *= self.A[m][:, obs_idx.argmax() if hasattr(obs_idx, 'argmax') else obs_idx[0]]  
-                else:  
-                    likelihood *= self.A[m][:, obs_idx]  
-              
-            # Posterior = likelihood * prior, normalized  
-            qs[f] = softmax(np.log(likelihood + 1e-16) + np.log(prior_f + 1e-16))  
+            empirical_prior = self.D[0]  
+          
+        # Compute posterior using Bayes' rule  
+        likelihood = self.A[0].T @ observation  
+        if not distr_obs:  
+            obs_onehot = np.zeros(len(self.A[0]))  
+            obs_onehot[observation] = 1.0  
+            likelihood = self.A[0].T @ obs_onehot  
+          
+        posterior = likelihood * empirical_prior  
+        qs = obj_array(1)  
+        qs[0] = norm_dist(posterior)  
           
         xn = None  
         vn = None  
           
     elif self.inference_algo == "MMP":  
-        # Update observation history  
+        # MMP inference  
         self.prev_obs.append(observation)  
         if len(self.prev_obs) > self.inference_horizon:  
             latest_obs = self.prev_obs[-self.inference_horizon:]  
@@ -204,7 +164,7 @@ def infer_states_info_monitoring(
             latest_obs = self.prev_obs  
             latest_actions = self.prev_actions  
   
-        # Initialize prev_actions properly (FIXED)  
+        # Initialize prev_actions properly  
         prev_actions = latest_actions  
         if prev_actions is not None:  
             prev_actions = np.stack(prev_actions, 0)  
@@ -215,10 +175,10 @@ def infer_states_info_monitoring(
         # Process observations  
         prev_obs = process_observation_seq(latest_obs, num_modalities, num_obs)  
           
-        # Get joint likelihood  
-        lh_seq = get_joint_likelihood_seq(self.A, prev_obs, num_states, num_modalities)  
+        # Initialize prior  
+        prior = obj_array_uniform(num_states)  
           
-        # Initialize results storage  
+        # Initialize storage for results  
         qs_seq_pi = obj_array(len(self.policies))  
         xn_seq_pi = obj_array(len(self.policies))  
         vn_seq_pi = obj_array(len(self.policies))  
@@ -226,87 +186,72 @@ def infer_states_info_monitoring(
           
         # Process each policy  
         for p_idx, policy in enumerate(self.policies):  
-            # Window dimensions  
-            past_len = len(lh_seq)  
-            future_len = policy.shape[0]  
-              
-            if last_timestep:  
-                infer_len = past_len + future_len - 1  
+            # Combine prev_actions with current policy  
+            if prev_actions is not None:  
+                full_policy = np.vstack((prev_actions, policy))  
             else:  
-                infer_len = past_len + future_len  
+                full_policy = policy  
               
-            future_cutoff = past_len + future_len - 2  
+            infer_len = len(prev_obs) + len(policy)  
               
-            # Initialize beliefs for this policy  
+            # Initialize belief sequence  
             qs_seq = obj_array(infer_len)  
             for t in range(infer_len):  
                 qs_seq[t] = obj_array_uniform(num_states)  
               
-            # Last message  
-            qs_T = obj_array_zeros(num_states)  
+            # Get joint likelihood sequence  
+            lh_seq = get_joint_likelihood_seq(self.A, prev_obs, qs_seq)  
               
-            # FIXED: Initialize prior correctly using obj_array_uniform  
-            prior = obj_array_uniform(num_states)  
-              
-            # Transposed transition matrices  
-            trans_B = obj_array(num_factors)  
-            for f in range(num_factors):  
-                trans_B[f] = spm_norm(np.swapaxes(self.B[f], 0, 1))  
-              
-            # Stack policy for easier indexing  
-            policy_stacked = np.vstack([np.zeros((1, num_factors)), policy])  
-              
-            # Initialize intermediate variables  
+            # Variational iterations  
             xn = []  
             vn = []  
               
-            # Variational iterations  
             for itr in range(num_iter):  
-                xn_itr_all_factors = obj_array(num_factors)  
-                vn_itr_all_factors = obj_array(num_factors)  
+                # CRITICAL FIX: Reset F_policy for each iteration  
+                F_policy = 0.0  
                   
-                for f in range(num_factors):  
-                    xn_itr_all_factors[f] = np.zeros((num_states[f], infer_len))  
-                    vn_itr_all_factors[f] = np.zeros((num_states[f], infer_len))  
+                # Initialize storage for intermediate values  
+                shape_list = [[num_states[f], infer_len] for f in range(num_factors)]  
+                xn_itr_all_factors = obj_array_zeros(shape_list)  
+                vn_itr_all_factors = obj_array_zeros(shape_list)  
                   
-                # Forward-backward pass  
                 for t in range(infer_len):  
                     for f in range(num_factors):  
                         # Likelihood term  
-                        if t < past_len:  
+                        if t < len(prev_obs):  
                             lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))  
                         else:  
                             lnA = np.zeros(num_states[f])  
                           
                         # Past message  
                         if t == 0:  
-                            lnB_past = spm_log_single(prior[f])  # This now works correctly  
+                            lnB_past = spm_log_single(prior[f])  
                         else:  
-                            past_msg = self.B[f][:, :, int(policy_stacked[t, f])].dot(qs_seq[t - 1][f])  
+                            past_msg = self.B[f][:, :, int(full_policy[t - 1, f])].dot(qs_seq[t - 1][f])  
                             lnB_past = spm_log_single(past_msg)  
                           
                         # Future message  
-                        if t >= future_cutoff:  
-                            lnB_future = spm_log_single(qs_T[f])  
+                        if t >= infer_len - 2:  
+                            lnB_future = np.zeros(num_states[f])  
                         else:  
-                            future_msg = trans_B[f][:, :, int(policy_stacked[t, f])].dot(qs_seq[t + 1][f])  
+                            future_msg = self.B[f][:, :, int(full_policy[t, f])].dot(qs_seq[t + 1][f])  
                             lnB_future = spm_log_single(future_msg)  
                           
-                        # Belief update  
+                        # Inference  
                         if grad_descent:  
                             sx = qs_seq[t][f]  
                             lnqs = spm_log_single(sx)  
-                            coeff = 1 if (t >= future_cutoff) else 2  
+                            coeff = 1 if (t >= infer_len - 2) else 2  
                             err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs  
                             vn_tmp = err - err.mean()  
                             lnqs = lnqs + tau * vn_tmp  
                             qs_seq[t][f] = softmax(lnqs)  
                               
-                            # Free energy accumulation  
+                            # CRITICAL FIX: Accumulate F_policy within iteration only  
                             if (t == 0) or (t == (infer_len - 1)):  
-                                F[p_idx] += sx.dot(0.5 * err)  
+                                F_policy += sx.dot(0.5 * err)  
                             else:  
-                                F[p_idx] += sx.dot(0.5 * (err - (num_factors - 1) * lnA / num_factors))  
+                                F_policy += sx.dot(0.5 * (err - (num_factors - 1) * lnA / num_factors))  
                               
                             # Store intermediate values  
                             xn_itr_all_factors[f][:, t] = np.copy(qs_seq[t][f])  
@@ -317,6 +262,9 @@ def infer_states_info_monitoring(
                 # Store iteration results  
                 xn.append(xn_itr_all_factors)  
                 vn.append(vn_itr_all_factors)  
+              
+            # Store final F for this policy after all iterations  
+            F[p_idx] = F_policy  
               
             # Store policy results  
             qs_seq_pi[p_idx] = qs_seq  
